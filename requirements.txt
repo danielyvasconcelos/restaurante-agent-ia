@@ -1,1 +1,3 @@
-# Dependencias do projeto. Cresce a cada etapa (Etapa 1 adiciona o cliente Gemini e python-dotenv).
+# Dependencias do projeto. Cresce a cada etapa.
+google-genai==2.34.0
+python-dotenv==1.1.1
