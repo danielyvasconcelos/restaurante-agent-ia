@@ -4,3 +4,6 @@ __pycache__/
 *.pyc
 data/embeddings.json
 .DS_Store
+
+# Material de estudo pessoal
+CONCEITOS.md
