@@ -1,0 +1,1 @@
+# Dependencias do projeto. Cresce a cada etapa (Etapa 1 adiciona o cliente Gemini e python-dotenv).
