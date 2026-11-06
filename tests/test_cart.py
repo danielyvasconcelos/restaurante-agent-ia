@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.cart import MAX_POR_ITEM, Carrinho, CarrinhoErro, RepositorioCarrinhos
+from app.cart import MAX_POR_ITEM, Carrinho, CarrinhoErro
 from app.menu import carregar_cardapio
 
 
@@ -67,10 +67,3 @@ def test_remover_quantidade_maior_que_a_existente_da_erro(pratos):
 def test_remover_item_que_nao_esta_no_carrinho_da_erro(pratos):
     with pytest.raises(CarrinhoErro):
         Carrinho().remover(pratos["Pudim de Leite"].id)
-
-
-def test_sessoes_tem_carrinhos_independentes(pratos):
-    repo = RepositorioCarrinhos()
-    repo.obter("ana").adicionar(pratos["Feijoada Completa"])
-    assert repo.obter("ana") is repo.obter("ana")
-    assert repo.obter("bia").esta_vazio()

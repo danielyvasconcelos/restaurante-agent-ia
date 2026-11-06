@@ -1,4 +1,4 @@
-"""Cliente do Gemini: uma funcao que chama o LLM e devolve texto + metricas."""
+"""Cliente do Gemini: chamadas de texto, chamadas com ferramentas e embeddings."""
 import time
 
 from google import genai
@@ -26,6 +26,22 @@ def calcular_custo(tokens_entrada: int, tokens_saida: int) -> float:
     ) / 1_000_000
 
 
+def _metricas(resposta, latencia: float) -> dict:
+    uso = resposta.usage_metadata
+    tokens_entrada = (uso.prompt_token_count or 0) if uso else 0
+    tokens_resposta = (uso.candidates_token_count or 0) if uso else 0
+    tokens_pensamento = (uso.thoughts_token_count or 0) if uso else 0
+    tokens_saida = tokens_resposta + tokens_pensamento
+    return {
+        "modelo": config.GEMINI_MODEL,
+        "tokens_entrada": tokens_entrada,
+        "tokens_saida": tokens_saida,
+        "tokens_pensamento": tokens_pensamento,
+        "latencia_s": round(latencia, 2),
+        "custo_usd": calcular_custo(tokens_entrada, tokens_saida),
+    }
+
+
 def chamar_llm(
     prompt: str,
     system: str | None = None,
@@ -46,22 +62,45 @@ def chamar_llm(
         ),
     )
     latencia = time.perf_counter() - inicio
+    return {"texto": resposta.text or "", **_metricas(resposta, latencia)}
 
-    uso = resposta.usage_metadata
-    tokens_entrada = uso.prompt_token_count or 0
-    tokens_resposta = uso.candidates_token_count or 0
-    tokens_pensamento = uso.thoughts_token_count or 0
-    tokens_saida = tokens_resposta + tokens_pensamento
 
-    return {
-        "texto": resposta.text or "",
-        "modelo": config.GEMINI_MODEL,
-        "tokens_entrada": tokens_entrada,
-        "tokens_saida": tokens_saida,
-        "tokens_pensamento": tokens_pensamento,
-        "latencia_s": round(latencia, 2),
-        "custo_usd": calcular_custo(tokens_entrada, tokens_saida),
-    }
+def chamar_llm_com_ferramentas(
+    contents: list,
+    system: str,
+    ferramentas: list,
+    temperature: float = 0.2,
+    max_output_tokens: int = 1024,
+) -> tuple:
+    """Uma rodada de conversa com ferramentas. Devolve (resposta_bruta, metricas).
+
+    A execucao automatica de funcoes do SDK fica DESLIGADA: quem executa as
+    ferramentas e o nosso codigo (agent.py). Assim controlamos limites, erros e logs.
+    """
+    client = _get_client()
+
+    inicio = time.perf_counter()
+    resposta = client.models.generate_content(
+        model=config.GEMINI_MODEL,
+        contents=contents,
+        config=types.GenerateContentConfig(
+            system_instruction=system,
+            tools=ferramentas,
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+        ),
+    )
+    latencia = time.perf_counter() - inicio
+    return resposta, _metricas(resposta, latencia)
+
+
+def texto_da_resposta(resposta) -> str:
+    """Junta as partes de texto da resposta (ignora chamadas de funcao e 'pensamento')."""
+    if not resposta.candidates or not resposta.candidates[0].content:
+        return ""
+    partes = resposta.candidates[0].content.parts or []
+    return "".join(p.text for p in partes if p.text and not p.thought).strip()
 
 
 # Para busca, documento e consulta usam "tipos de tarefa" diferentes: o modelo

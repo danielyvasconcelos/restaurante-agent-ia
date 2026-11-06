@@ -1,17 +1,19 @@
-"""Chat no terminal para testar o RAG. Rode da raiz do projeto:
+"""Chat no terminal para testar o agente. Rode da raiz do projeto:
 
     python -m scripts.chat_cli
 
 Digite 'sair' para encerrar.
 """
-from app.agent import responder
+from app.agent import conversar
 from app.menu import carregar_cardapio
 from app.rag import carregar_indice
+from app.session import RepositorioSessoes
 
 
 def main() -> None:
     pratos = carregar_cardapio()
     indice = carregar_indice()
+    sessao = RepositorioSessoes().obter("terminal")
     print("Atendente virtual. Digite 'sair' para encerrar.\n")
 
     while True:
@@ -21,8 +23,10 @@ def main() -> None:
         if not pergunta:
             continue
 
-        r = responder(pergunta, pratos, indice)
+        r = conversar(pergunta, sessao, pratos, indice)
         print(f"\nAtendente: {r['texto']}\n")
+        for c in r["chamadas"]:
+            print(f"  [ferramenta: {c['nome']}({c['args']}) -> ok={c['ok']}]")
         usados = ", ".join(f"{nome} ({score})" for nome, score in r["pratos_usados"])
         print(f"  [contexto: {usados}]")
         print(

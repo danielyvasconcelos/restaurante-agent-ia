@@ -80,15 +80,3 @@ def _validar_quantidade(quantidade) -> None:
         raise CarrinhoErro("A quantidade precisa ser pelo menos 1.")
     if quantidade > MAX_POR_ITEM:
         raise CarrinhoErro(f"O limite é {MAX_POR_ITEM} unidades por vez.")
-
-
-class RepositorioCarrinhos:
-    """Um carrinho por sessao, em memoria. Reiniciar o servidor apaga tudo."""
-
-    def __init__(self) -> None:
-        self._carrinhos: dict[str, Carrinho] = {}
-
-    def obter(self, session_id: str) -> Carrinho:
-        if session_id not in self._carrinhos:
-            self._carrinhos[session_id] = Carrinho()
-        return self._carrinhos[session_id]

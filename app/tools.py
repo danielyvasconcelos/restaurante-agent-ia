@@ -3,9 +3,13 @@
 Cada ferramenta devolve um dicionario com "ok" True/False. Erros voltam como DADOS,
 nao como excecao, para o modelo ler o motivo e se corrigir (ex.: perguntar qual prato).
 """
+from decimal import Decimal, InvalidOperation
+
+from google.genai import types
+
 from app.cart import Carrinho, CarrinhoErro
-from app.menu import buscar_por_nome, formatar_preco
-from app.schemas import Prato
+from app.menu import buscar_por_nome, formatar_preco, normalizar_texto
+from app.schemas import Alergenico, Categoria, Prato
 
 
 def _estado(carrinho: Carrinho) -> dict:
@@ -87,3 +91,179 @@ def ver_carrinho(carrinho: Carrinho) -> dict:
     if carrinho.esta_vazio():
         return {"ok": True, "mensagem": "O carrinho está vazio.", "carrinho": _estado(carrinho)}
     return {"ok": True, "carrinho": _estado(carrinho)}
+
+
+# ---------------------------------------------------------------------------
+# Filtro exato sobre o cardapio inteiro (resolve o que o RAG nao consegue)
+# ---------------------------------------------------------------------------
+_SINONIMOS_ALERGENICO = {
+    "leite": "lactose",
+    "trigo": "gluten",
+    "camarao": "crustaceos",
+    "crustaceo": "crustaceos",
+    "castanha": "castanhas",
+    "amendoins": "amendoim",
+    "ovos": "ovo",
+    "peixes": "peixe",
+}
+_SINONIMOS_CATEGORIA = {
+    "sobremesas": "sobremesa",
+    "entradas": "entrada",
+    "bebidas": "bebida",
+    "pratos principais": "prato principal",
+    "prato": "prato principal",
+}
+
+
+def _resolver_alergenico(texto: str) -> str | None:
+    n = normalizar_texto(texto)
+    n = _SINONIMOS_ALERGENICO.get(n, n)
+    return n if n in {a.value for a in Alergenico} else None
+
+
+def _resolver_categoria(texto: str) -> str | None:
+    n = normalizar_texto(texto)
+    n = _SINONIMOS_CATEGORIA.get(n, n)
+    return n if n in {c.value for c in Categoria} else None
+
+
+def filtrar_pratos(
+    pratos: list[Prato],
+    sem_alergenicos: list[str] | None = None,
+    categoria: str | None = None,
+    preco_maximo: float | None = None,
+) -> dict:
+    """Filtra o cardapio INTEIRO por alergenicos, categoria e preco, em codigo exato."""
+    if isinstance(sem_alergenicos, str):
+        sem_alergenicos = [sem_alergenicos]
+
+    excluir = set()
+    for texto in sem_alergenicos or []:
+        valor = _resolver_alergenico(str(texto))
+        if valor is None:
+            return _erro(
+                "alergenico_invalido",
+                f"Alergênico desconhecido: '{texto}'.",
+                validos=sorted(a.value for a in Alergenico),
+            )
+        excluir.add(valor)
+
+    cat = None
+    if categoria:
+        cat = _resolver_categoria(str(categoria))
+        if cat is None:
+            return _erro(
+                "categoria_invalida",
+                f"Categoria desconhecida: '{categoria}'.",
+                validas=sorted(c.value for c in Categoria),
+            )
+
+    limite = None
+    if preco_maximo is not None:
+        try:
+            limite = Decimal(str(preco_maximo))
+        except InvalidOperation:
+            return _erro("preco_invalido", f"Preço máximo inválido: '{preco_maximo}'.")
+
+    achados = [
+        p
+        for p in pratos
+        if not (excluir & {a.value for a in p.alergenicos})
+        and (cat is None or p.categoria.value == cat)
+        and (limite is None or p.preco <= limite)
+    ]
+    return {
+        "ok": True,
+        "quantidade": len(achados),
+        "pratos": [
+            {
+                "nome": p.nome,
+                "categoria": p.categoria.value,
+                "preco": formatar_preco(p.preco),
+                "alergenicos": [a.value for a in p.alergenicos],
+            }
+            for p in achados
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Ligacao com o Gemini: descricao das ferramentas e despachante
+# ---------------------------------------------------------------------------
+DECLARACOES = [
+    types.FunctionDeclaration(
+        name="adicionar_item",
+        description=(
+            "Adiciona um prato ao carrinho do cliente. Use quando o cliente pedir um prato. "
+            "Se o nome for ambíguo, a ferramenta devolve as opções para você perguntar ao cliente."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "nome_prato": {"type": "string", "description": "Nome do prato, como o cliente falou."},
+                "quantidade": {"type": "integer", "minimum": 1, "description": "Quantidade (padrão 1)."},
+            },
+            "required": ["nome_prato"],
+        },
+    ),
+    types.FunctionDeclaration(
+        name="remover_item",
+        description=(
+            "Remove um prato do carrinho. Sem quantidade, remove o item inteiro; "
+            "com quantidade, remove só essa quantidade."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "nome_prato": {"type": "string", "description": "Nome do prato a remover."},
+                "quantidade": {"type": "integer", "minimum": 1, "description": "Quantas unidades remover."},
+            },
+            "required": ["nome_prato"],
+        },
+    ),
+    types.FunctionDeclaration(
+        name="ver_carrinho",
+        description="Mostra os itens, as quantidades e o total atual do carrinho.",
+        parameters_json_schema={"type": "object", "properties": {}},
+    ),
+    types.FunctionDeclaration(
+        name="filtrar_pratos",
+        description=(
+            "Filtra o cardápio INTEIRO por alergênicos, categoria e preço máximo. Use para perguntas "
+            "como 'quais pratos não têm lactose', 'que sobremesas vocês têm' ou 'o que custa até 30 reais'."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "sem_alergenicos": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": sorted(a.value for a in Alergenico)},
+                    "description": "Exclui pratos que contenham qualquer um destes alergênicos.",
+                },
+                "categoria": {
+                    "type": "string",
+                    "enum": sorted(c.value for c in Categoria),
+                    "description": "Mostra só pratos desta categoria.",
+                },
+                "preco_maximo": {"type": "number", "description": "Preço máximo em reais."},
+            },
+        },
+    ),
+]
+FERRAMENTAS = [types.Tool(function_declarations=DECLARACOES)]
+
+
+def executar(nome: str, args: dict, carrinho: Carrinho, pratos: list[Prato]) -> dict:
+    """Executa a ferramenta pedida pelo modelo. Nunca levanta excecao: devolve erro como dado."""
+    funcoes = {
+        "adicionar_item": lambda a: adicionar_item(carrinho, pratos, **a),
+        "remover_item": lambda a: remover_item(carrinho, pratos, **a),
+        "ver_carrinho": lambda a: ver_carrinho(carrinho, **a),
+        "filtrar_pratos": lambda a: filtrar_pratos(pratos, **a),
+    }
+    if nome not in funcoes:
+        return _erro("ferramenta_desconhecida", f"Não existe a ferramenta '{nome}'.")
+    try:
+        return funcoes[nome](dict(args or {}))
+    except TypeError as e:
+        return _erro("argumentos_invalidos", f"Argumentos inválidos para '{nome}': {e}")
