@@ -5,6 +5,7 @@ no prompt de sistema como contexto e pede ao modelo que responda so com base nel
 """
 from google.genai import types
 
+from app.guardrails import detectar_alergias, itens_em_conflito, restricao_nao_reconhecida
 from app.llm import chamar_llm, chamar_llm_com_ferramentas, texto_da_resposta
 from app.menu import formatar_preco
 from app.rag import IndiceVetorial, buscar
@@ -75,10 +76,37 @@ Regras sobre o pedido:
 7. Para valores e totais, use os números devolvidos pelas ferramentas. Não faça contas por conta própria.
 8. Responda em português do Brasil.
 
+Regras sobre alergias:
+9. O sistema registra automaticamente as alergias que o cliente declara (veja "ALERGIAS" abaixo). Você NUNCA deve dizer que o cliente tem uma alergia que não consta ali.
+10. Se adicionar_item devolver o erro "alergenico_detectado", o prato NÃO foi adicionado. Explique o risco, cite os alergênicos e pergunte se o cliente quer mesmo o prato. Só chame adicionar_item de novo se o cliente confirmar claramente na mensagem seguinte.
+11. Nunca recomende pratos que contenham alergênicos declarados. Para sugerir alternativas, use filtrar_pratos com sem_alergenicos.
+
+ALERGIAS:
+{alergias}
+
 CARDÁPIO RELEVANTE:
 {contexto}"""
 
 MENSAGEM_FALHA = "Desculpe, não consegui concluir isso agora. Pode reformular ou falar com um atendente?"
+
+
+def montar_bloco_alergias(sessao: Sessao) -> str:
+    """Estado das alergias da sessao, escrito para o modelo ler a cada turno."""
+    if sessao.alergias:
+        linhas = ["Alergias declaradas pelo cliente: " + ", ".join(sorted(sessao.alergias)) + "."]
+    else:
+        linhas = ["Nenhuma alergia declarada até agora."]
+    for c in itens_em_conflito(sessao.carrinho, sessao.alergias):
+        linhas.append(
+            f"ATENÇÃO: '{c['item']}' já está no carrinho e contém {', '.join(c['alergenicos'])}. "
+            "Avise o cliente."
+        )
+    if sessao.restricao_nao_reconhecida:
+        linhas.append(
+            "AVISO: o cliente citou uma restrição que o sistema não reconheceu. "
+            "Antes de adicionar pratos, peça que confirme com a equipe do restaurante."
+        )
+    return "\n".join(linhas)
 
 
 def conversar(
@@ -97,10 +125,17 @@ def conversar(
     um loop infinito (e uma conta inesperada).
     """
     sessao.perguntas.append(pergunta)
+    # Guardrail: a deteccao roda em codigo, ANTES do modelo, sobre a mensagem do cliente.
+    sessao.alergias |= detectar_alergias(pergunta)
+    if restricao_nao_reconhecida(pergunta):
+        sessao.restricao_nao_reconhecida = True
     # Perguntas de acompanhamento ("e o preco dele?") sozinhas buscam mal; usamos as duas ultimas.
     consulta = " ".join(sessao.perguntas[-2:])
     encontrados = buscar(consulta, pratos, indice, k=k)
-    system = PROMPT_AGENTE.format(contexto=montar_contexto([p for p, _ in encontrados]))
+    system = PROMPT_AGENTE.format(
+        contexto=montar_contexto([p for p, _ in encontrados]),
+        alergias=montar_bloco_alergias(sessao),
+    )
 
     sessao.historico.append(types.Content(role="user", parts=[types.Part(text=pergunta)]))
 
@@ -131,9 +166,14 @@ def conversar(
 
         partes = []
         for pedido in pedidos:
-            resultado = executar(pedido.name, dict(pedido.args or {}), sessao.carrinho, pratos)
+            resultado = executar(pedido.name, dict(pedido.args or {}), sessao, pratos)
             chamadas.append(
-                {"nome": pedido.name, "args": dict(pedido.args or {}), "ok": resultado.get("ok")}
+                {
+                    "nome": pedido.name,
+                    "args": dict(pedido.args or {}),
+                    "ok": resultado.get("ok"),
+                    "erro": resultado.get("erro"),
+                }
             )
             partes.append(types.Part.from_function_response(name=pedido.name, response=resultado))
         sessao.historico.append(types.Content(role="user", parts=partes))
@@ -146,5 +186,6 @@ def conversar(
         "texto": texto,
         "chamadas": chamadas,
         "pratos_usados": [(p.nome, round(s, 3)) for p, s in encontrados],
+        "alergias": sorted(sessao.alergias),
         **total,
     }

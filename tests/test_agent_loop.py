@@ -51,7 +51,8 @@ def test_modelo_pede_ferramenta_executamos_e_ele_responde(monkeypatch):
     assert r["texto"] == "Pronto! 2 feijoadas no carrinho."
     assert sessao.carrinho.itens()[0].quantidade == 2  # a ferramenta rodou de verdade
     assert r["chamadas"] == [
-        {"nome": "adicionar_item", "args": {"nome_prato": "feijoada", "quantidade": 2}, "ok": True}
+        {"nome": "adicionar_item", "args": {"nome_prato": "feijoada", "quantidade": 2},
+         "ok": True, "erro": None}
     ]
     assert [m.role for m in sessao.historico] == ["user", "model", "user", "model"]
     assert r["tokens_entrada"] == 20  # duas chamadas ao modelo somadas
