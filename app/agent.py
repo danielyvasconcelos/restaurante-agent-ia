@@ -4,6 +4,7 @@ Etapa 4: responde perguntas usando RAG. Busca os pratos mais relevantes, coloca
 no prompt de sistema como contexto e pede ao modelo que responda so com base neles.
 """
 from app.llm import chamar_llm
+from app.menu import formatar_preco
 from app.rag import IndiceVetorial, buscar
 from app.schemas import Prato
 
@@ -18,11 +19,6 @@ Regras:
 
 CARDÁPIO RELEVANTE:
 {contexto}"""
-
-
-def formatar_preco(preco) -> str:
-    """49.9 -> 'R$ 49,90' (formato brasileiro)."""
-    return f"R$ {preco:.2f}".replace(".", ",")
 
 
 def montar_contexto(pratos: list[Prato]) -> str:
