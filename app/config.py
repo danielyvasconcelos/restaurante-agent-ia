@@ -22,3 +22,7 @@ def validar_config() -> None:
         raise RuntimeError(
             "GEMINI_API_KEY nao encontrada. Copie .env.example para .env e preencha."
         )
+
+# Embeddings (Etapa 3). Podem ser trocados no .env sem mexer no codigo.
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "gemini-embedding-2")
+EMBEDDING_DIMENSAO = int(os.getenv("EMBEDDING_DIMENSAO", "768"))

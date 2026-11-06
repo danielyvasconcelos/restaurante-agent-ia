@@ -62,3 +62,35 @@ def chamar_llm(
         "latencia_s": round(latencia, 2),
         "custo_usd": calcular_custo(tokens_entrada, tokens_saida),
     }
+
+
+# Para busca, documento e consulta usam "tipos de tarefa" diferentes: o modelo
+# ajusta o vetor conforme o papel do texto (ser encontrado vs. encontrar).
+TIPOS_EMBEDDING = {"documento": "RETRIEVAL_DOCUMENT", "consulta": "RETRIEVAL_QUERY"}
+
+
+def _embed(textos: list[str], tipo: str) -> list[list[float]]:
+    resposta = _get_client().models.embed_content(
+        model=config.EMBEDDING_MODEL,
+        contents=textos,
+        config=types.EmbedContentConfig(
+            task_type=TIPOS_EMBEDDING[tipo],
+            output_dimensionality=config.EMBEDDING_DIMENSAO,
+        ),
+    )
+    return [list(e.values) for e in resposta.embeddings]
+
+
+def gerar_embeddings(textos: list[str], tipo: str = "documento") -> list[list[float]]:
+    """Converte textos em vetores. tipo: 'documento' (pratos) ou 'consulta' (pergunta)."""
+    if tipo not in TIPOS_EMBEDDING:
+        raise ValueError(f"tipo invalido: {tipo!r}. Use 'documento' ou 'consulta'.")
+    if not textos:
+        return []
+
+    vetores = _embed(textos, tipo)
+    if len(vetores) != len(textos):
+        # Alguns modelos juntam varios textos em um unico vetor. Como precisamos de
+        # um vetor por texto, repetimos uma chamada por texto.
+        vetores = [_embed([t], tipo)[0] for t in textos]
+    return vetores
