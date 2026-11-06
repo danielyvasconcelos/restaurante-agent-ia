@@ -26,3 +26,8 @@ def validar_config() -> None:
 # Embeddings (Etapa 3). Podem ser trocados no .env sem mexer no codigo.
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "gemini-embedding-2")
 EMBEDDING_DIMENSAO = int(os.getenv("EMBEDDING_DIMENSAO", "768"))
+
+# API (Etapa 8)
+LLM_TIMEOUT_S = int(os.getenv("LLM_TIMEOUT_S", "30"))  # tempo maximo de UMA chamada ao Gemini
+MAX_PERGUNTAS_POR_SESSAO = 50  # cada turno reenvia o historico: conversa longa = custo crescente
+MAX_SESSOES = 1000  # protege a memoria do servidor

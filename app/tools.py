@@ -30,6 +30,11 @@ def _estado(carrinho: Carrinho) -> dict:
     }
 
 
+def estado_carrinho(carrinho: Carrinho) -> dict:
+    """Versao publica de _estado: itens, quantidades e total ja formatados."""
+    return _estado(carrinho)
+
+
 def _erro(codigo: str, mensagem: str, **extra) -> dict:
     return {"ok": False, "erro": codigo, "mensagem": mensagem, **extra}
 
