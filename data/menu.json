@@ -1,0 +1,137 @@
+[
+  {
+    "id": 1,
+    "nome": "Feijoada Completa",
+    "categoria": "prato principal",
+    "descricao": "Feijão preto cozido lentamente com carnes defumadas, servido com arroz, couve, farofa e laranja.",
+    "preco": 49.90,
+    "ingredientes": ["feijão preto", "carne seca", "costelinha suína", "linguiça calabresa", "paio", "arroz branco", "couve refogada", "farofa de mandioca com bacon", "laranja"],
+    "alergenicos": []
+  },
+  {
+    "id": 2,
+    "nome": "Moqueca de Peixe",
+    "categoria": "prato principal",
+    "descricao": "Peixe branco cozido no leite de coco com azeite de dendê, pimentão e coentro, acompanhado de arroz.",
+    "preco": 62.00,
+    "ingredientes": ["peixe branco", "leite de coco", "tomate", "pimentão", "cebola", "coentro", "azeite de dendê", "arroz branco"],
+    "alergenicos": ["peixe"]
+  },
+  {
+    "id": 3,
+    "nome": "Moqueca de Camarão",
+    "categoria": "prato principal",
+    "descricao": "Camarões cozidos no leite de coco com azeite de dendê, pimentão e coentro, acompanhados de arroz.",
+    "preco": 68.00,
+    "ingredientes": ["camarão", "leite de coco", "tomate", "pimentão", "cebola", "coentro", "azeite de dendê", "arroz branco"],
+    "alergenicos": ["crustaceos"]
+  },
+  {
+    "id": 4,
+    "nome": "Frango à Parmegiana",
+    "categoria": "prato principal",
+    "descricao": "Filé de frango empanado, coberto com molho de tomate e queijo derretido, com arroz e batata frita.",
+    "preco": 44.90,
+    "ingredientes": ["filé de frango", "farinha de rosca", "ovo", "queijo mussarela", "molho de tomate", "arroz branco", "batata frita"],
+    "alergenicos": ["gluten", "ovo", "lactose"]
+  },
+  {
+    "id": 5,
+    "nome": "Strogonoff de Carne",
+    "categoria": "prato principal",
+    "descricao": "Cubos de carne bovina em molho cremoso de tomate e cogumelos, com arroz e batata palha.",
+    "preco": 46.90,
+    "ingredientes": ["carne bovina", "creme de leite", "cogumelos", "molho de tomate", "cebola", "arroz branco", "batata palha"],
+    "alergenicos": ["lactose"]
+  },
+  {
+    "id": 6,
+    "nome": "Escondidinho de Carne Seca",
+    "categoria": "prato principal",
+    "descricao": "Purê de mandioca gratinado com queijo coalho sobre carne seca desfiada e refogada.",
+    "preco": 42.90,
+    "ingredientes": ["mandioca", "carne seca", "manteiga", "queijo coalho", "cebola", "coentro"],
+    "alergenicos": ["lactose"]
+  },
+  {
+    "id": 7,
+    "nome": "Risoto de Cogumelos",
+    "categoria": "prato principal",
+    "descricao": "Arroz arbóreo cremoso com mix de cogumelos, vinho branco e parmesão. Opção vegetariana.",
+    "preco": 48.90,
+    "ingredientes": ["arroz arbóreo", "cogumelos", "caldo de legumes", "vinho branco", "queijo parmesão", "manteiga", "cebola"],
+    "alergenicos": ["lactose"]
+  },
+  {
+    "id": 8,
+    "nome": "Salada Caesar com Frango",
+    "categoria": "entrada",
+    "descricao": "Alface romana, frango grelhado, croutons e parmesão com molho caesar tradicional.",
+    "preco": 38.90,
+    "ingredientes": ["alface romana", "frango grelhado", "croutons de pão", "queijo parmesão", "molho caesar (ovo, anchova, azeite)"],
+    "alergenicos": ["gluten", "lactose", "ovo", "peixe"]
+  },
+  {
+    "id": 9,
+    "nome": "Coxinha de Frango (6 unidades)",
+    "categoria": "entrada",
+    "descricao": "Porção de seis coxinhas crocantes recheadas com frango desfiado e requeijão.",
+    "preco": 22.90,
+    "ingredientes": ["farinha de trigo", "caldo de frango", "frango desfiado", "requeijão", "cebola"],
+    "alergenicos": ["gluten", "lactose"]
+  },
+  {
+    "id": 10,
+    "nome": "Pão de Queijo (porção)",
+    "categoria": "entrada",
+    "descricao": "Porção de pães de queijo mineiros quentinhos, sem glúten.",
+    "preco": 18.90,
+    "ingredientes": ["polvilho", "queijo minas", "ovo", "leite", "óleo"],
+    "alergenicos": ["lactose", "ovo"]
+  },
+  {
+    "id": 11,
+    "nome": "Bowl Vegano de Grão-de-bico",
+    "categoria": "prato principal",
+    "descricao": "Grão-de-bico, quinoa, abóbora assada e couve com molho de tahine e castanha de caju. 100% vegetal.",
+    "preco": 39.90,
+    "ingredientes": ["grão-de-bico", "quinoa", "abóbora assada", "couve", "castanha de caju", "tahine", "limão"],
+    "alergenicos": ["castanhas", "gergelim"]
+  },
+  {
+    "id": 12,
+    "nome": "Brigadeiro Gourmet",
+    "categoria": "sobremesa",
+    "descricao": "Brigadeiro cremoso de chocolate, servido em taça com granulado.",
+    "preco": 12.90,
+    "ingredientes": ["leite condensado", "chocolate (contém lecitina de soja)", "manteiga", "granulado"],
+    "alergenicos": ["lactose", "soja"]
+  },
+  {
+    "id": 13,
+    "nome": "Pudim de Leite",
+    "categoria": "sobremesa",
+    "descricao": "Pudim de leite condensado com calda de caramelo, textura lisa e sem furinhos.",
+    "preco": 16.90,
+    "ingredientes": ["leite condensado", "leite", "ovo", "açúcar"],
+    "alergenicos": ["lactose", "ovo"]
+  },
+  {
+    "id": 14,
+    "nome": "Sundae de Paçoca",
+    "categoria": "sobremesa",
+    "descricao": "Sorvete de creme com paçoca esfarelada e calda de chocolate.",
+    "preco": 19.90,
+    "ingredientes": ["sorvete de creme (leite)", "paçoca", "calda de chocolate (contém lecitina de soja)"],
+    "alergenicos": ["lactose", "amendoim", "soja"]
+  },
+  {
+    "id": 15,
+    "nome": "Suco de Laranja Natural",
+    "categoria": "bebida",
+    "descricao": "Suco de laranja espremido na hora, sem açúcar adicionado.",
+    "preco": 9.90,
+    "ingredientes": ["laranja"],
+    "alergenicos": []
+  }
+]
