@@ -51,7 +51,8 @@ def test_modelo_pede_ferramenta_executamos_e_ele_responde(monkeypatch):
     assert r["texto"] == "Pronto! 2 feijoadas no carrinho."
     assert sessao.carrinho.itens()[0].quantidade == 2  # a ferramenta rodou de verdade
     assert r["chamadas"] == [
-        {"nome": "adicionar_item", "args": {"nome_prato": "feijoada", "quantidade": 2}, "ok": True}
+        {"nome": "adicionar_item", "args": {"nome_prato": "feijoada", "quantidade": 2},
+         "ok": True, "erro": None}
     ]
     assert [m.role for m in sessao.historico] == ["user", "model", "user", "model"]
     assert r["tokens_entrada"] == 20  # duas chamadas ao modelo somadas
@@ -116,3 +117,14 @@ def test_prompt_do_agente_manda_usar_ferramentas_e_nao_fazer_contas():
     assert "SEMPRE use as ferramentas" in p
     assert "Não faça contas" in p
     assert "{contexto}" in p
+
+
+def test_conversar_informa_chamadas_ao_modelo_e_tempo_de_busca(monkeypatch):
+    sessao = Sessao()
+    _instalar_roteiro(monkeypatch, [
+        _chamada("ver_carrinho", {}),
+        _texto("Seu carrinho está vazio."),
+    ])
+    r = agent.conversar("o que tem no carrinho?", sessao, carregar_cardapio(), indice=None)
+    assert r["chamadas_llm"] == 2  # uma para pedir a ferramenta, outra para responder
+    assert r["latencia_busca_s"] >= 0

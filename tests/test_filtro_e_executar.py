@@ -2,7 +2,7 @@
 import pytest
 
 from app import tools
-from app.cart import Carrinho
+from app.session import Sessao
 from app.menu import carregar_cardapio
 
 
@@ -63,24 +63,24 @@ def test_preco_maximo(pratos):
 
 
 def test_executar_despacha_para_a_ferramenta_certa(pratos):
-    c = Carrinho()
-    r = tools.executar("adicionar_item", {"nome_prato": "feijoada", "quantidade": 2}, c, pratos)
+    s = Sessao()
+    r = tools.executar("adicionar_item", {"nome_prato": "feijoada", "quantidade": 2}, s, pratos)
     assert r["ok"] is True
-    assert c.total() == 2 * pratos[0].preco
+    assert s.carrinho.total() == 2 * pratos[0].preco
 
 
 def test_executar_ferramenta_desconhecida_vira_erro(pratos):
-    r = tools.executar("apagar_tudo", {}, Carrinho(), pratos)
+    r = tools.executar("apagar_tudo", {}, Sessao(), pratos)
     assert r["erro"] == "ferramenta_desconhecida"
 
 
 def test_executar_argumentos_errados_vira_erro_sem_quebrar(pratos):
-    r = tools.executar("adicionar_item", {"prato": "feijoada"}, Carrinho(), pratos)
+    r = tools.executar("adicionar_item", {"prato": "feijoada"}, Sessao(), pratos)
     assert r["ok"] is False
     assert r["erro"] == "argumentos_invalidos"
 
 
 def test_declaracoes_batem_com_as_ferramentas_executaveis(pratos):
     for decl in tools.DECLARACOES:
-        r = tools.executar(decl.name, {}, Carrinho(), pratos)
+        r = tools.executar(decl.name, {}, Sessao(), pratos)
         assert r.get("erro") != "ferramenta_desconhecida", decl.name

@@ -26,7 +26,10 @@ def main() -> None:
         r = conversar(pergunta, sessao, pratos, indice)
         print(f"\nAtendente: {r['texto']}\n")
         for c in r["chamadas"]:
-            print(f"  [ferramenta: {c['nome']}({c['args']}) -> ok={c['ok']}]")
+            erro = f" erro={c['erro']}" if c["erro"] else ""
+            print(f"  [ferramenta: {c['nome']}({c['args']}) -> ok={c['ok']}{erro}]")
+        if r["alergias"]:
+            print(f"  [alergias registradas: {', '.join(r['alergias'])}]")
         usados = ", ".join(f"{nome} ({score})" for nome, score in r["pratos_usados"])
         print(f"  [contexto: {usados}]")
         print(

@@ -14,7 +14,10 @@ def _get_client() -> genai.Client:
     global _client
     if _client is None:
         config.validar_config()
-        _client = genai.Client(api_key=config.GEMINI_API_KEY)
+        _client = genai.Client(
+            api_key=config.GEMINI_API_KEY,
+            http_options=types.HttpOptions(timeout=config.LLM_TIMEOUT_S * 1000),  # em ms
+        )
     return _client
 
 

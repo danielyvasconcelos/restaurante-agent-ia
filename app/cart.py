@@ -79,4 +79,4 @@ def _validar_quantidade(quantidade) -> None:
     if quantidade < 1:
         raise CarrinhoErro("A quantidade precisa ser pelo menos 1.")
     if quantidade > MAX_POR_ITEM:
-        raise CarrinhoErro(f"O limite é {MAX_POR_ITEM} unidades por vez.")
+        raise CarrinhoErro(f"O limite é {MAX_POR_ITEM} unidades por item.")

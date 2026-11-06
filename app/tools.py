@@ -8,8 +8,10 @@ from decimal import Decimal, InvalidOperation
 from google.genai import types
 
 from app.cart import Carrinho, CarrinhoErro
+from app.guardrails import avaliar_adicao, conflitos_do_prato, itens_em_conflito
 from app.menu import buscar_por_nome, formatar_preco, normalizar_texto
 from app.schemas import Alergenico, Categoria, Prato
+from app.session import Sessao
 
 
 def _estado(carrinho: Carrinho) -> dict:
@@ -26,6 +28,11 @@ def _estado(carrinho: Carrinho) -> dict:
         "total_unidades": sum(i.quantidade for i in carrinho.itens()),
         "total": formatar_preco(carrinho.total()),
     }
+
+
+def estado_carrinho(carrinho: Carrinho) -> dict:
+    """Versao publica de _estado: itens, quantidades e total ja formatados."""
+    return _estado(carrinho)
 
 
 def _erro(codigo: str, mensagem: str, **extra) -> dict:
@@ -54,11 +61,20 @@ def _como_inteiro(valor):
 
 
 def adicionar_item(
-    carrinho: Carrinho, pratos: list[Prato], nome_prato: str, quantidade: int = 1
+    carrinho: Carrinho,
+    pratos: list[Prato],
+    nome_prato: str,
+    quantidade: int = 1,
+    avaliar=None,
 ) -> dict:
+    """avaliar: funcao opcional (prato -> erro | None) que pode vetar a adicao (guardrail)."""
     prato, erro = _resolver_prato(nome_prato, pratos)
     if erro:
         return erro
+    if avaliar is not None:
+        veto = avaliar(prato)
+        if veto:
+            return veto
     try:
         item = carrinho.adicionar(prato, _como_inteiro(quantidade))
     except CarrinhoErro as e:
@@ -87,10 +103,14 @@ def remover_item(
     }
 
 
-def ver_carrinho(carrinho: Carrinho) -> dict:
+def ver_carrinho(carrinho: Carrinho, alergias: set[str] | None = None) -> dict:
     if carrinho.esta_vazio():
         return {"ok": True, "mensagem": "O carrinho está vazio.", "carrinho": _estado(carrinho)}
-    return {"ok": True, "carrinho": _estado(carrinho)}
+    resultado = {"ok": True, "carrinho": _estado(carrinho)}
+    conflitos = itens_em_conflito(carrinho, alergias or set())
+    if conflitos:
+        resultado["avisos_alergia"] = conflitos
+    return resultado
 
 
 # ---------------------------------------------------------------------------
@@ -132,6 +152,7 @@ def filtrar_pratos(
     sem_alergenicos: list[str] | None = None,
     categoria: str | None = None,
     preco_maximo: float | None = None,
+    alergias_declaradas: set[str] | None = None,
 ) -> dict:
     """Filtra o cardapio INTEIRO por alergenicos, categoria e preco, em codigo exato."""
     if isinstance(sem_alergenicos, str):
@@ -172,19 +193,18 @@ def filtrar_pratos(
         and (cat is None or p.categoria.value == cat)
         and (limite is None or p.preco <= limite)
     ]
-    return {
-        "ok": True,
-        "quantidade": len(achados),
-        "pratos": [
-            {
-                "nome": p.nome,
-                "categoria": p.categoria.value,
-                "preco": formatar_preco(p.preco),
-                "alergenicos": [a.value for a in p.alergenicos],
-            }
-            for p in achados
-        ],
-    }
+    def _linha(p: Prato) -> dict:
+        linha = {
+            "nome": p.nome,
+            "categoria": p.categoria.value,
+            "preco": formatar_preco(p.preco),
+            "alergenicos": [a.value for a in p.alergenicos],
+        }
+        if alergias_declaradas:
+            linha["contem_alergenico_declarado"] = conflitos_do_prato(p, alergias_declaradas)
+        return linha
+
+    return {"ok": True, "quantidade": len(achados), "pratos": [_linha(p) for p in achados]}
 
 
 # ---------------------------------------------------------------------------
@@ -253,13 +273,23 @@ DECLARACOES = [
 FERRAMENTAS = [types.Tool(function_declarations=DECLARACOES)]
 
 
-def executar(nome: str, args: dict, carrinho: Carrinho, pratos: list[Prato]) -> dict:
-    """Executa a ferramenta pedida pelo modelo. Nunca levanta excecao: devolve erro como dado."""
+def executar(nome: str, args: dict, sessao: Sessao, pratos: list[Prato]) -> dict:
+    """Executa a ferramenta pedida pelo modelo. Nunca levanta excecao: devolve erro como dado.
+
+    O guardrail e injetado aqui (e nao pedido ao modelo): argumentos como 'avaliar' ou
+    'alergias_declaradas' nao existem na descricao das ferramentas, e se o modelo os
+    enviar mesmo assim, o Python recusa por argumento duplicado.
+    """
+    carrinho = sessao.carrinho
     funcoes = {
-        "adicionar_item": lambda a: adicionar_item(carrinho, pratos, **a),
+        "adicionar_item": lambda a: adicionar_item(
+            carrinho, pratos, avaliar=lambda prato: avaliar_adicao(sessao, prato), **a
+        ),
         "remover_item": lambda a: remover_item(carrinho, pratos, **a),
-        "ver_carrinho": lambda a: ver_carrinho(carrinho, **a),
-        "filtrar_pratos": lambda a: filtrar_pratos(pratos, **a),
+        "ver_carrinho": lambda a: ver_carrinho(carrinho, alergias=sessao.alergias, **a),
+        "filtrar_pratos": lambda a: filtrar_pratos(
+            pratos, alergias_declaradas=sessao.alergias, **a
+        ),
     }
     if nome not in funcoes:
         return _erro("ferramenta_desconhecida", f"Não existe a ferramenta '{nome}'.")
