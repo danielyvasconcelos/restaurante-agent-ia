@@ -1,5 +1,6 @@
 """Configuracoes do projeto, lidas de variaveis de ambiente (.env)."""
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -31,3 +32,10 @@ EMBEDDING_DIMENSAO = int(os.getenv("EMBEDDING_DIMENSAO", "768"))
 LLM_TIMEOUT_S = int(os.getenv("LLM_TIMEOUT_S", "30"))  # tempo maximo de UMA chamada ao Gemini
 MAX_PERGUNTAS_POR_SESSAO = 50  # cada turno reenvia o historico: conversa longa = custo crescente
 MAX_SESSOES = 1000  # protege a memoria do servidor
+
+# Metricas e protecao de custo (Etapa 9)
+METRICAS_PATH = Path(
+    os.getenv("METRICAS_PATH", str(Path(__file__).resolve().parent.parent / "data" / "metricas.jsonl"))
+)
+# Teto de gasto por dia (UTC). 0 desliga. Com chave paga, e uma rede de seguranca.
+ORCAMENTO_DIARIO_USD = float(os.getenv("ORCAMENTO_DIARIO_USD", "2.0"))

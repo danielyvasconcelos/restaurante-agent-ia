@@ -117,3 +117,14 @@ def test_prompt_do_agente_manda_usar_ferramentas_e_nao_fazer_contas():
     assert "SEMPRE use as ferramentas" in p
     assert "Não faça contas" in p
     assert "{contexto}" in p
+
+
+def test_conversar_informa_chamadas_ao_modelo_e_tempo_de_busca(monkeypatch):
+    sessao = Sessao()
+    _instalar_roteiro(monkeypatch, [
+        _chamada("ver_carrinho", {}),
+        _texto("Seu carrinho está vazio."),
+    ])
+    r = agent.conversar("o que tem no carrinho?", sessao, carregar_cardapio(), indice=None)
+    assert r["chamadas_llm"] == 2  # uma para pedir a ferramenta, outra para responder
+    assert r["latencia_busca_s"] >= 0

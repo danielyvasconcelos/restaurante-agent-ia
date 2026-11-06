@@ -66,6 +66,8 @@ class ChamadaFerramenta(BaseModel):
 class Metricas(BaseModel):
     tokens_entrada: int
     tokens_saida: int
+    chamadas_llm: int  # quantas vezes o modelo foi chamado neste turno (1 + uma por rodada de ferramentas)
+    latencia_busca_s: float  # busca semantica (inclui gerar o embedding da pergunta)
     latencia_llm_s: float  # soma das chamadas ao modelo neste turno
     latencia_total_s: float  # a requisicao inteira (busca + modelo + ferramentas)
     custo_usd: float

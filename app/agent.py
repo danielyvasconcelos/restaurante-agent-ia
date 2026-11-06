@@ -3,6 +3,8 @@
 Etapa 4: responde perguntas usando RAG. Busca os pratos mais relevantes, coloca
 no prompt de sistema como contexto e pede ao modelo que responda so com base neles.
 """
+import time
+
 from google.genai import types
 
 from app.guardrails import detectar_alergias, itens_em_conflito, restricao_nao_reconhecida
@@ -131,7 +133,9 @@ def conversar(
         sessao.restricao_nao_reconhecida = True
     # Perguntas de acompanhamento ("e o preco dele?") sozinhas buscam mal; usamos as duas ultimas.
     consulta = " ".join(sessao.perguntas[-2:])
+    inicio_busca = time.perf_counter()
     encontrados = buscar(consulta, pratos, indice, k=k)
+    latencia_busca = round(time.perf_counter() - inicio_busca, 2)
     system = PROMPT_AGENTE.format(
         contexto=montar_contexto([p for p, _ in encontrados]),
         alergias=montar_bloco_alergias(sessao),
@@ -142,8 +146,10 @@ def conversar(
     total = {"tokens_entrada": 0, "tokens_saida": 0, "latencia_s": 0.0, "custo_usd": 0.0}
     chamadas = []
     texto = ""
+    chamadas_llm = 0
 
     for _ in range(max_passos):
+        chamadas_llm += 1
         resposta, m = chamar_llm_com_ferramentas(
             sessao.historico, system, FERRAMENTAS, temperature=temperature
         )
@@ -187,5 +193,7 @@ def conversar(
         "chamadas": chamadas,
         "pratos_usados": [(p.nome, round(s, 3)) for p, s in encontrados],
         "alergias": sorted(sessao.alergias),
+        "chamadas_llm": chamadas_llm,
+        "latencia_busca_s": latencia_busca,
         **total,
     }

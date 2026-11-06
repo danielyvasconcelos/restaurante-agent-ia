@@ -10,6 +10,7 @@ from google.genai import errors as genai_errors
 
 from app import config, main
 from app.menu import carregar_cardapio
+from app.metrics import RegistroMetricas
 from app.rag import CAMINHO_INDICE
 from app.session import RepositorioSessoes, Sessao
 
@@ -18,6 +19,7 @@ def _resultado(texto="Olá!"):
     return {
         "texto": texto, "chamadas": [], "pratos_usados": [], "alergias": [],
         "tokens_entrada": 100, "tokens_saida": 20, "latencia_s": 0.5, "custo_usd": 0.0001,
+        "chamadas_llm": 1, "latencia_busca_s": 0.2,
     }
 
 
@@ -26,8 +28,13 @@ def pratos():
     return carregar_cardapio()
 
 
-def _cliente(pratos, repositorio=None):
-    app = main.criar_app(pratos=pratos, indice=object(), repositorio=repositorio)
+def _cliente(pratos, repositorio=None, registro=None, orcamento=None):
+    # registro em memoria por padrao: os testes nunca escrevem em data/metricas.jsonl
+    registro = registro if registro is not None else RegistroMetricas(None)
+    app = main.criar_app(
+        pratos=pratos, indice=object(), repositorio=repositorio,
+        registro=registro, orcamento_diario_usd=orcamento,
+    )
     return TestClient(app)
 
 
@@ -129,7 +136,7 @@ def test_erro_inesperado_nao_vaza_detalhes(monkeypatch, pratos):
         raise ValueError("chave sk-123 vazou")
 
     monkeypatch.setattr(main, "conversar", quebrado)
-    app = main.criar_app(pratos=pratos, indice=object())
+    app = main.criar_app(pratos=pratos, indice=object(), registro=RegistroMetricas(None))
     with TestClient(app, raise_server_exceptions=False) as c:
         r = _chat(c)
     assert r.status_code == 500
@@ -207,3 +214,62 @@ def test_restaurar_volta_ao_estado_da_foto(pratos):
 def test_sobe_com_o_cardapio_e_o_indice_reais():
     with TestClient(main.criar_app()) as c:
         assert c.get("/health").json()["pratos"] == 15
+
+
+# --- metricas e orcamento (Etapa 9) -----------------------------------------------
+def test_chat_registra_metricas_sem_texto_nem_session_id(monkeypatch, pratos, tmp_path):
+    monkeypatch.setattr(main, "conversar", lambda pergunta, sessao, p, i: _resultado())
+    arquivo = tmp_path / "m.jsonl"
+    with _cliente(pratos, registro=RegistroMetricas(arquivo)) as c:
+        r = _chat(c, "tenho alergia a camarao", "cliente_secreto")
+    assert r.json()["metricas"]["chamadas_llm"] == 1
+    linhas = arquivo.read_text(encoding="utf-8").splitlines()
+    assert len(linhas) == 1
+    bruto = linhas[0]
+    assert "camarao" not in bruto and "cliente_secreto" not in bruto  # privacidade
+    import json
+    ev = json.loads(bruto)
+    assert ev["ok"] is True and ev["status"] == 200
+    assert ev["tokens_entrada"] == 100 and ev["custo_usd"] == 0.0001
+    assert len(ev["sessao"]) == 8
+
+
+def test_falhas_tambem_sao_registradas_com_o_status(monkeypatch, pratos):
+    def falho(*a):
+        raise genai_errors.ServerError(500, {"error": {"message": "x", "status": "X"}})
+
+    monkeypatch.setattr(main, "conversar", falho)
+    registro = RegistroMetricas(None)
+    with _cliente(pratos, registro=registro) as c:
+        assert _chat(c).status_code == 502
+    ev = registro.eventos()[0]
+    assert ev["ok"] is False and ev["status"] == 502
+
+
+def test_endpoint_metricas_resume_as_requisicoes(monkeypatch, pratos):
+    monkeypatch.setattr(main, "conversar", lambda pergunta, sessao, p, i: _resultado())
+    with _cliente(pratos) as c:
+        _chat(c, "a")
+        _chat(c, "b")
+        corpo = c.get("/metricas").json()
+    assert corpo["requisicoes"] == 2 and corpo["sucessos"] == 2
+    assert corpo["custo_total_usd"] == pytest.approx(0.0002)
+    assert corpo["orcamento"]["gasto_hoje_usd"] == pytest.approx(0.0002)
+
+
+def test_orcamento_diario_estourado_da_429_sem_chamar_o_modelo(monkeypatch, pratos):
+    chamadas = []
+    monkeypatch.setattr(main, "conversar", lambda *a: chamadas.append(1) or _resultado())
+    registro = RegistroMetricas(None)
+    registro.registrar({"ok": True, "status": 200, "custo_usd": 0.5})  # ja gastou hoje
+    with _cliente(pratos, registro=registro, orcamento=0.5) as c:
+        assert _chat(c).status_code == 429
+    assert chamadas == []
+
+
+def test_orcamento_zero_desliga_o_teto(monkeypatch, pratos):
+    monkeypatch.setattr(main, "conversar", lambda pergunta, sessao, p, i: _resultado())
+    registro = RegistroMetricas(None)
+    registro.registrar({"ok": True, "status": 200, "custo_usd": 999.0})
+    with _cliente(pratos, registro=registro, orcamento=0) as c:
+        assert _chat(c).status_code == 200
