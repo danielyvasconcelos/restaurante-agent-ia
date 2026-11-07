@@ -15,7 +15,9 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
+import httpx
 import numpy as np
+from google.genai import errors as genai_errors
 
 from app import config
 from app.agent import conversar
@@ -28,6 +30,22 @@ PASTA = Path(__file__).resolve().parent
 CASOS = PASTA / "eval_set.json"
 SAIDA = PASTA / "ultimo_resultado.json"
 
+TENTATIVAS = 3          # tentativas por caso quando o provedor falha (429/5xx/timeout)
+ESPERA_429_S = 40       # o limite do plano gratuito é por minuto: espera passar
+ESPERA_5XX_S = 10
+CODIGOS_TRANSITORIOS = {429, 500, 502, 503, 504}
+
+
+def eh_erro_de_infra(e: Exception) -> bool:
+    """Falha do provedor (sobrecarga, limite de taxa, timeout), não resposta errada do agente."""
+    if isinstance(e, httpx.TimeoutException):
+        return True
+    return isinstance(e, genai_errors.APIError) and getattr(e, "code", None) in CODIGOS_TRANSITORIOS
+
+
+def espera_para(e: Exception) -> int:
+    return ESPERA_429_S if getattr(e, "code", None) == 429 else ESPERA_5XX_S
+
 
 def percentil(valores: list[float], p: float) -> float:
     """Mesmo cálculo do app/metrics.py (numpy, com interpolação), para os números baterem."""
@@ -38,6 +56,8 @@ def rodar_caso(caso: dict, pratos, indice) -> dict:
     sessao = Sessao()  # sessão nova por caso: um caso nunca contamina outro
     chamadas, respostas, turnos = [], [], []
     erro = None
+    infra = False
+    espera = 0
     try:
         for pergunta in caso["turnos"]:
             r = conversar(pergunta, sessao, pratos, indice)
@@ -47,7 +67,9 @@ def rodar_caso(caso: dict, pratos, indice) -> dict:
                 {k: r[k] for k in ("tokens_entrada", "tokens_saida", "latencia_s", "custo_usd", "chamadas_llm")}
             )
     except Exception as e:  # uma falha de API não pode derrubar a avaliação inteira
-        erro = f"{type(e).__name__}: {e}"
+        erro = f"{type(e).__name__}: {str(e)[:200]}"
+        infra = eh_erro_de_infra(e)
+        espera = espera_para(e)
 
     carrinho = {i.prato.nome: i.quantidade for i in sessao.carrinho.itens()}
     alergias = sorted(getattr(a, "value", a) for a in sessao.alergias)
@@ -58,6 +80,8 @@ def rodar_caso(caso: dict, pratos, indice) -> dict:
         "id": caso["id"],
         "categoria": caso["categoria"],
         "aprovado": not falhas,
+        "erro_infra": infra,
+        "espera_s": espera,
         "falhas": falhas,
         "turnos_usuario": caso["turnos"],
         "respostas": respostas,
@@ -69,21 +93,29 @@ def rodar_caso(caso: dict, pratos, indice) -> dict:
 
 
 def resumir(resultados: list[dict]) -> dict:
+    """Erro de infraestrutura (provedor fora do ar) NÃO conta como erro do agente:
+    o acerto é calculado sobre os casos que de fato rodaram. Os dois números aparecem."""
+    executados = [r for r in resultados if not r.get("erro_infra")]
+    aprovados = sum(r["aprovado"] for r in executados)
     por_categoria = defaultdict(lambda: [0, 0])
-    for r in resultados:
+    for r in executados:
         por_categoria[r["categoria"]][1] += 1
         por_categoria[r["categoria"]][0] += r["aprovado"]
-    turnos = [t for r in resultados for t in r["turnos"]]
+    turnos = [t for r in executados for t in r["turnos"]]
     latencias = [t["latencia_s"] for t in turnos]
     custo = sum(t["custo_usd"] for t in turnos)
+    n = len(executados)
     return {
         "casos": len(resultados),
-        "aprovados": sum(r["aprovado"] for r in resultados),
-        "taxa_acerto": round(sum(r["aprovado"] for r in resultados) / len(resultados), 4) if resultados else 0.0,
+        "executados": n,
+        "erros_infra": len(resultados) - n,
+        "aprovados": aprovados,
+        "taxa_acerto": round(aprovados / n, 4) if n else 0.0,
+        "taxa_acerto_sobre_todos": round(aprovados / len(resultados), 4) if resultados else 0.0,
         "por_categoria": {c: {"aprovados": a, "total": t} for c, (a, t) in por_categoria.items()},
         "turnos": len(turnos),
         "custo_total_usd": round(custo, 6),
-        "custo_medio_por_caso_usd": round(custo / len(resultados), 6) if resultados else 0.0,
+        "custo_medio_por_caso_usd": round(custo / n, 6) if n else 0.0,
         "custo_medio_por_turno_usd": round(custo / len(turnos), 6) if turnos else 0.0,
         "tokens_entrada_total": sum(t["tokens_entrada"] for t in turnos),
         "tokens_saida_total": sum(t["tokens_saida"] for t in turnos),
@@ -99,14 +131,18 @@ def resumir(resultados: list[dict]) -> dict:
 def imprimir(resultados: list[dict], resumo: dict) -> None:
     print()
     for r in resultados:
-        print(f"{'OK   ' if r['aprovado'] else 'FALHA'} {r['id']:<11} {r['categoria']}")
+        rotulo = "INFRA" if r.get("erro_infra") else ("OK   " if r["aprovado"] else "FALHA")
+        print(f"{rotulo} {r['id']:<11} {r['categoria']}")
         for f in r["falhas"]:
             print(f"        - {f}")
-        if not r["aprovado"]:
+        if not r["aprovado"] and not r.get("erro_infra"):
             for pergunta, resposta in zip(r["turnos_usuario"], r["respostas"]):
                 print(f"        Você: {pergunta}\n        Atendente: {resposta[:400]}")
     print("\n=== Resumo ===")
-    print(f"Acerto geral: {resumo['aprovados']}/{resumo['casos']} ({resumo['taxa_acerto']:.0%})")
+    print(f"Acerto nos casos executados: {resumo['aprovados']}/{resumo['executados']} ({resumo['taxa_acerto']:.0%})")
+    if resumo["erros_infra"]:
+        print(f"ATENÇÃO: {resumo['erros_infra']} caso(s) não rodaram por erro do provedor (429/5xx/timeout) "
+              f"mesmo após {TENTATIVAS} tentativas. Sobre todos os {resumo['casos']}: {resumo['taxa_acerto_sobre_todos']:.0%}")
     for cat, v in resumo["por_categoria"].items():
         print(f"  {cat:<28} {v['aprovados']}/{v['total']}")
     lat = resumo["latencia_turno_s"]
@@ -144,7 +180,15 @@ def main() -> int:
     for rodada in range(args.repeticoes):
         for i, caso in enumerate(casos, 1):
             print(f"[{rodada + 1}/{args.repeticoes}] {i}/{len(casos)} {caso['id']} ...", flush=True)
-            resultados.append(rodar_caso(caso, pratos, indice))
+            for tentativa in range(1, TENTATIVAS + 1):
+                r = rodar_caso(caso, pratos, indice)
+                r["tentativas"] = tentativa
+                if not r["erro_infra"] or tentativa == TENTATIVAS:
+                    break
+                print(f"    erro do provedor; esperando {r['espera_s']} s e tentando de novo "
+                      f"({tentativa}/{TENTATIVAS})", flush=True)
+                time.sleep(r["espera_s"])
+            resultados.append(r)
 
     resumo = resumir(resultados)
     imprimir(resultados, resumo)

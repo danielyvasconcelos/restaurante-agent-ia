@@ -6,7 +6,10 @@ import pytest
 
 from app.menu import carregar_cardapio
 from eval.checks import checar, validar_caso
-from eval.run_eval import CASOS, percentil, resumir
+import httpx
+from google.genai import errors as genai_errors
+
+from eval.run_eval import CASOS, eh_erro_de_infra, percentil, resumir
 
 CASOS_JSON = json.loads(Path(CASOS).read_text(encoding="utf-8"))
 NOMES = {p.nome for p in carregar_cardapio()}
@@ -97,3 +100,27 @@ def test_gabarito_da_pergunta_sobre_gluten_aceita_respostas_certas(resposta, dev
     caso = next(c for c in CASOS_JSON if c["id"] == "alerg-03")
     padroes = {"nao_regex": caso["esperado"]["nao_regex"]}
     assert (checar(padroes, resposta, [], {}, []) == []) is deve_passar
+
+
+def test_erro_de_infra_e_separado_de_erro_do_agente():
+    turno = {"tokens_entrada": 100, "tokens_saida": 10, "latencia_s": 2.0, "custo_usd": 0.001, "chamadas_llm": 1}
+    res = [
+        {"aprovado": True, "categoria": "a", "turnos": [turno]},
+        {"aprovado": False, "categoria": "a", "turnos": [turno]},
+        {"aprovado": False, "erro_infra": True, "categoria": "a", "turnos": []},
+    ]
+    r = resumir(res)
+    assert r["casos"] == 3 and r["executados"] == 2 and r["erros_infra"] == 1
+    assert r["taxa_acerto"] == 0.5                      # sobre os que rodaram
+    assert r["taxa_acerto_sobre_todos"] == round(1 / 3, 4)
+    assert r["por_categoria"]["a"] == {"aprovados": 1, "total": 2}
+
+
+def test_eh_erro_de_infra_reconhece_timeout_e_codigos_transitorios():
+    assert eh_erro_de_infra(httpx.ReadTimeout("lento"))
+    assert not eh_erro_de_infra(ValueError("bug nosso"))
+    e503 = genai_errors.ServerError(503, {"error": {"message": "x", "status": "UNAVAILABLE"}})
+    e429 = genai_errors.ClientError(429, {"error": {"message": "x", "status": "RESOURCE_EXHAUSTED"}})
+    e400 = genai_errors.ClientError(400, {"error": {"message": "x", "status": "INVALID_ARGUMENT"}})
+    assert eh_erro_de_infra(e503) and eh_erro_de_infra(e429)
+    assert not eh_erro_de_infra(e400)                   # 400 é erro nosso, não transitório
