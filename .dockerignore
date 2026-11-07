@@ -1,0 +1,15 @@
+# Nada disso deve entrar na imagem
+.git
+.gitignore
+.gitattributes
+.env
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+CONCEITOS.md
+README.md
+tests
+eval
+data/embeddings.json
+data/metricas.jsonl

@@ -1,0 +1,15 @@
+services:
+  app:
+    build: .
+    image: restaurante-agent-ia
+    # A chave vem do .env em tempo de execução. Ela NÃO é copiada para dentro da imagem.
+    env_file: .env
+    ports:
+      # 127.0.0.1: só esta máquina acessa. A API não tem login e gasta a sua chave paga.
+      # Esquerda = porta do seu computador (8001, porque a 8000 costuma estar ocupada);
+      # direita = porta dentro do container (não muda).
+      - "127.0.0.1:8001:8000"
+    volumes:
+      # Guarda embeddings.json e metricas.jsonl fora do container (sobrevivem a recriações)
+      - ./data:/app/data
+    restart: unless-stopped

@@ -8,9 +8,12 @@ import hashlib
 import logging
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from google.genai import errors as genai_errors
 
 from app import config
@@ -24,6 +27,14 @@ from app.tools import estado_carrinho
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("restaurante")
+
+FRONTEND = Path(__file__).resolve().parent.parent / "frontend"
+# A pagina so carrega script e estilo do proprio servidor. Mesmo que algum texto malicioso
+# chegasse ate ela, o navegador se recusaria a executar codigo de outra origem ou inline.
+CSP = (
+    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+    "connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+)
 
 
 def _erro_http(e: Exception) -> HTTPException | None:
@@ -179,6 +190,24 @@ def criar_app(
     def encerrar_sessao(session_id: str, request: Request) -> Response:
         request.app.state.repositorio.remover(session_id)  # idempotente: apagar o que nao existe e ok
         return Response(status_code=204)
+
+    @app.get("/", include_in_schema=False)
+    def pagina_inicial() -> FileResponse:
+        arquivo = FRONTEND / "index.html"
+        if not arquivo.exists():
+            raise HTTPException(404, "Interface não encontrada.")
+        return FileResponse(
+            arquivo,
+            media_type="text/html; charset=utf-8",
+            headers={
+                "Content-Security-Policy": CSP,
+                "X-Content-Type-Options": "nosniff",
+                "Referrer-Policy": "no-referrer",
+            },
+        )
+
+    if FRONTEND.exists():
+        app.mount("/static", StaticFiles(directory=FRONTEND), name="static")
 
     return app
 

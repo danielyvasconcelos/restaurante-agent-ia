@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Restaurante da Dani – atendente virtual</title>
+  <meta name="description" content="Converse com o atendente virtual: tire dúvidas sobre o cardápio e alergênicos e monte seu pedido.">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <a class="pular" href="#entrada">Ir para a mensagem</a>
+
+  <header class="topo">
+    <div class="marca">
+      <h1>Restaurante da Dani</h1>
+      <p>Atendente virtual</p>
+    </div>
+    <button id="nova" type="button" class="botao-secundario">Nova conversa</button>
+  </header>
+
+  <main class="layout">
+    <section class="conversa" aria-labelledby="titulo-conversa">
+      <h2 id="titulo-conversa" class="so-leitor">Conversa</h2>
+      <div id="log" role="log" aria-live="polite" aria-relevant="additions" tabindex="0"></div>
+
+      <div id="sugestoes" class="sugestoes" aria-label="Sugestões de mensagem"></div>
+
+      <form id="form" class="envio" autocomplete="off">
+        <label for="entrada" class="so-leitor">Sua mensagem</label>
+        <textarea id="entrada" rows="1" maxlength="500" placeholder="Pergunte sobre o cardápio ou faça seu pedido" required></textarea>
+        <button id="enviar" type="submit" class="botao-principal">Enviar</button>
+        <p id="contador" class="contador" aria-hidden="true"></p>
+      </form>
+    </section>
+
+    <aside id="comanda" class="comanda" aria-label="Comanda e detalhes do atendimento">
+      <section class="bloco" aria-labelledby="titulo-comanda">
+        <h2 id="titulo-comanda">Comanda</h2>
+        <ul id="itens" class="itens"></ul>
+        <p id="vazio" class="vazio">Nada pedido ainda. Peça um prato pela conversa.</p>
+        <div class="linha total">
+          <span>Total</span><span class="pontos" aria-hidden="true"></span><strong id="total">R$ 0,00</strong>
+        </div>
+      </section>
+
+      <section class="bloco" aria-labelledby="titulo-alergias">
+        <h2 id="titulo-alergias">Alergias informadas</h2>
+        <ul id="alergias" class="alergias"></ul>
+        <p id="sem-alergias" class="vazio">Nenhuma até agora. Se você tiver alergia, conte na conversa.</p>
+      </section>
+
+      <section class="bloco" aria-labelledby="titulo-turno">
+        <h2 id="titulo-turno">O que o atendente fez</h2>
+        <div id="carimbo" class="carimbo" hidden>Não adicionado</div>
+        <ul id="acoes" class="acoes"></ul>
+        <p id="sem-acoes" class="vazio">Só conversou nesta mensagem.</p>
+      </section>
+
+      <section class="bloco" aria-labelledby="titulo-metricas">
+        <h2 id="titulo-metricas">Consumo</h2>
+        <dl id="metricas" class="metricas"></dl>
+      </section>
+
+      <details class="bloco cardapio">
+        <summary>Cardápio completo</summary>
+        <ul id="cardapio" class="cardapio-lista"></ul>
+      </details>
+    </aside>
+  </main>
+
+  <a id="resumo-movel" class="resumo-movel" href="#comanda">Ver comanda</a>
+
+  <footer class="rodape">
+    <p>Restaurante fictício, criado para demonstração. Se você tem alergia grave, confirme sempre com a equipe.</p>
+    <p><a href="/docs">Documentação da API</a> <a href="/metricas">Métricas</a></p>
+  </footer>
+
+  <script src="/static/app.js" defer></script>
+</body>
+</html>
