@@ -6,7 +6,7 @@ Agente de atendimento para um restaurante fictício. O cliente conversa em portu
 
 **Stack:** Python · FastAPI · Google Gemini (`gemini-3.1-flash-lite` e `gemini-embedding-2`) · Pydantic · pytest · HTML/CSS/JS puro · Docker
 
-> **Status:** etapas 0 a 10 concluídas. Docker (11), avaliação com métricas de acerto (12) e este README final (13) estão marcados abaixo como **pendente** onde aplicável. Nenhum número de acerto é apresentado antes de ser medido.
+> **Status:** etapas 0 a 11 concluídas. avaliação com métricas de acerto (12) e este README final (13) estão marcados abaixo como **pendente** onde aplicável. Docker (11) está pronto. Nenhum número de acerto é apresentado antes de ser medido.
 
 ---
 
@@ -195,7 +195,17 @@ python -m scripts.relatorio_metricas         # custo e latência
 pytest                             # 167 testes, sem chamar a API
 ```
 
-**Docker:** _pendente (Etapa 11)._
+**Docker** (não precisa de Python instalado; precisa do `.env` com a chave):
+
+```bash
+docker compose build
+docker compose run --rm app python -m scripts.build_index   # gera os embeddings (1 vez)
+docker compose up -d                                        # http://127.0.0.1:8001/
+docker compose logs -f app                                  # acompanhar os logs
+docker compose down                                         # parar
+```
+
+Decisões do Docker: a chave fica só no `.env` (lida em tempo de execução, nunca copiada para a imagem); o container roda como usuário sem privilégios; a porta é publicada apenas em `127.0.0.1` (8001 na sua máquina, para não colidir com o `uvicorn` local na 8000), porque a API não tem autenticação; a pasta `data/` é um volume, então embeddings e métricas sobrevivem a recriações do container.
 
 ### Endpoints
 
@@ -237,7 +247,7 @@ Sinceridade sobre o que **não** está resolvido:
 
 ## 8. Próximos passos
 
-- Docker e avaliação (Etapas 11 e 12).
+- Avaliação (Etapa 12).
 - Resumir o histórico antigo para frear o crescimento do custo.
 - Armazenamento de sessões compartilhado (Redis) e autenticação.
 - Comparar modelos (qualidade × custo × latência) com o mesmo conjunto de avaliação.
