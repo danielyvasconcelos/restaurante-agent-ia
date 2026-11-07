@@ -78,8 +78,6 @@ Cada requisição grava em `data/metricas.jsonl`: tokens de entrada e saída, n�
 
 ## 3. Minha contribuição específica
 
-Este projeto foi construído em etapas, com o Claude (assistente de IA da Anthropic) como mentor e par de programação: ele propunha e explicava cada etapa, e eu rodava, testava com a API real, lia os erros, escolhia entre as alternativas e fazia os commits. As decisões e descobertas abaixo são a parte de engenharia, mais do que o código em si.
-
 **Decisões de projeto**
 
 - **Guardrail em código com semântica de confirmação.** O modelo não pode confirmar por conta própria. A confirmação exige alerta no turno anterior e um "sim" explícito do cliente.
@@ -92,12 +90,13 @@ Este projeto foi construído em etapas, com o Claude (assistente de IA da Anthro
 
 **Qualidade**
 
-- 167 testes automatizados (cardápio, RAG, carrinho, ferramentas, loop do agente, guardrail, sessões, API, métricas e interface), rodando sem chamar a API paga.
+- 208 testes automatizados (cardápio, RAG, carrinho, ferramentas, loop do agente, guardrail, sessões, API, métricas e interface), rodando sem chamar a API paga.
+- **Avaliação com gabarito** (23 casos, verificações de estado e de texto), com repetição de rodadas e separação entre erro do agente e erro do provedor.
 - Chave de API apenas em `.env` (ignorado pelo git); commits semânticos por etapa.
 
 ---
 
-## 4. A maior dificuldade
+## 4. As dificuldades
 
 **Dificuldade 1: o RAG não sabe responder "todos os pratos que não têm X".**
 
@@ -121,10 +120,23 @@ Nas conversas reais, respostas de 1 s conviveram com uma de 25 s. A média escon
 
 O histórico completo é reenviado ao modelo a cada mensagem, então o custo por turno aumenta ao longo da conversa. Está documentado como limitação, e o limite de 50 mensagens por conversa controla o pior caso.
 
+**Dificuldade 5: o agente respondia assunto fora do restaurante.**
+
+A avaliação achou o que eu não tinha visto: para "Qual é a capital da França?", o atendente respondeu "Paris". O prompt tinha 11 regras sobre cardápio, pedido e alergia e **nenhuma sobre assunto fora do escopo**. O mesmo caso tinha passado na rodada anterior, então o comportamento era instável, não ausente.
+
+*Solução:* uma regra de escopo no prompt (e outra para não revelar as instruções). Para não ajustar só até passar, escrevi dois casos novos *depois* de ver a falha (uma conta e uma pergunta de futebol). Resultado: nenhuma falha em 3 rodadas, e os dois casos novos recusaram corretamente.
+
+*Limite honesto:* é uma regra de prompt, não uma garantia em código. Num conjunto pequeno, "não apareceu falha" não é o mesmo que "nunca falha".
+
+**Dificuldade 6: o provedor falha, e isso não pode virar nota do agente.**
+
+Na primeira avaliação, 2 casos falharam por erro do Google (503 de sobrecarga e 429 de limite por minuto). Contar isso como erro do agente daria "90%", um número que não descreve o agente. O executor agora separa **erro do provedor** de **resposta errada**, calcula o acerto sobre os casos que rodaram e tenta de novo (até 3 vezes, esperando 40 s no 429).
+
 **Bugs encontrados pelos testes (e não por mim)**
 
 - A regex de alergia a amendoim aceitava `amendoins?` e não reconhecia "amendoim". Um teste que percorre todos os alergênicos do enum pegou isso. Corrigido para `\bamendoi(?:m|ns)\b`.
 - O preço saía como `49.9` na API. Corrigido com serializador para `"49.90"`.
+- No próprio gabarito da avaliação, a expressão que detecta "contém glúten" casava `tem` dentro de `contem`, e reprovaria respostas corretas como "não contém glúten". Corrigido com `\b` e testes de respostas certas e erradas.
 
 ---
 
@@ -134,7 +146,7 @@ O histórico completo é reenviado ao modelo a cada mensagem, então o custo por
 
 | O quê | Como | Onde |
 |---|---|---|
-| Corretude do código | 167 testes automatizados, sem rede | `pytest` |
+| Corretude do código | 208 testes automatizados, sem rede | `pytest` |
 | Segurança do guardrail | Testes percorrem todos os 9 alergênicos e os cenários de confirmação | `tests/test_guardrails.py` |
 | Segurança da interface | Testes de CSP, ausência de `innerHTML` e de recursos externos | `tests/test_frontend.py` |
 | Tokens e custo por requisição | Contagem de tokens retornada pelo Gemini × preço por milhão | `app/llm.py`, `data/metricas.jsonl` |
@@ -143,28 +155,53 @@ O histórico completo é reenviado ao modelo a cada mensagem, então o custo por
 
 Preços usados: US$ 0,25 por milhão de tokens de entrada e US$ 1,50 por milhão de saída (tokens de "pensamento" cobrados como saída).
 
-### 5.2 Avaliação de qualidade das respostas (pendente, Etapa 12)
+### 5.2 Avaliação de qualidade das respostas
 
-Será um conjunto de cerca de 20 perguntas com a resposta esperada, rodado por script (`eval/run_eval.py`), cobrindo:
+**Como funciona.** `eval/eval_set.json` tem **23 casos em 6 categorias**, cada um com um gabarito. `python -m eval.run_eval` roda tudo com o Gemini de verdade, em sessões novas, e confere cada caso com verificações determinísticas (sem outro LLM como juiz):
 
-- perguntas sobre ingredientes e alergênicos;
-- perguntas de conjunto ("sem lactose");
-- montagem e alteração de pedido;
-- o guardrail (tentativas de adicionar prato com alergênico declarado);
-- perguntas fora do escopo, em que o agente deve recusar.
+- **de estado** (as mais fortes): quais ferramentas rodaram com sucesso, qual ficou a comanda final, quais alergias foram registradas;
+- **de texto** (mais grosseiras): trechos que devem ou não aparecer na resposta, ignorando acento e maiúsculas, com expressão regular para negações como "não contém glúten".
 
-| Métrica | Resultado |
+O executor separa **erro do provedor** (429, 5xx, timeout) de **resposta errada**, e tenta de novo até 3 vezes.
+
+**Resultado final** (`gemini-3.1-flash-lite`, 23 casos × 3 rodadas = 69 conversas, em 07/11/2026):
+
+| Categoria | Casos | Aprovados nas 3 rodadas |
+|---|---|---|
+| Alergênicos de um prato | 4 | 12/12 |
+| Preço e ingredientes | 4 | 12/12 |
+| Perguntas de conjunto | 4 | 12/12 |
+| Montar o pedido | 4 | 12/12 |
+| Guardrail de alergia | 3 | 9/9 |
+| Fora do escopo e robustez | 4 | 12/12 |
+| **Total** | **23** | **69/69** |
+
+| Métrica | Valor |
 |---|---|
-| Taxa de acerto geral | _a preencher após a Etapa 12_ |
-| Acerto por categoria | _a preencher_ |
-| Custo médio por pergunta | _a preencher_ |
-| Latência p50 / p95 | _a preencher_ |
+| Custo total (69 conversas, 78 turnos) | US$ 0,0536 |
+| Custo médio por caso / por turno | US$ 0,0008 / US$ 0,0007 |
+| Tokens | 177.611 de entrada, 6.145 de saída |
+| Latência por turno (média, p50, p95, máx) | 2,83 s, 1,4 s, 7,16 s, 33,18 s |
+| Casos que precisaram de nova tentativa (erro do provedor) | 7 de 69 |
+
+O custo é dominado pela **entrada** (cerca de 83%), porque o prompt de sistema e o histórico são reenviados a cada chamada.
+
+**Como o resultado evoluiu** (a avaliação serviu para achar defeitos, não só para dar nota):
+
+| Rodada | O que aconteceu |
+|---|---|
+| 1 (21 casos) | 19 de 19 dos casos que rodaram; 2 não rodaram por erro do provedor (503 e 429). Latência p50 3,55 s, p95 20,14 s. |
+| 2 (21 casos) | 20 de 21. Falha real: o agente respondeu "Paris" a uma pergunta fora do escopo. Latência p50 5,67 s, p95 23,66 s. |
+| 3 (23 casos × 3, prompt com regra de escopo) | 69 de 69. Resultado da tabela acima. |
 
 ### 5.3 Como interpretar os números
 
-- Acerto sobre ~20 perguntas é um **indicador**, não uma garantia estatística. Uma pergunta errada vale 5 pontos percentuais.
-- A latência depende da rede e da carga do provedor. Por isso usamos percentis.
-- O custo medido ignora requisições que falharam, mesmo que o provedor cobre por elas.
+- **São 23 casos distintos, não 69.** Repetir 3 vezes mede **estabilidade**; não mede o quanto o agente acerta perguntas fora do conjunto. Um caso vale cerca de 4,3 pontos percentuais.
+- **"69/69" não é garantia.** Com esse tamanho, é um indicador de que o comportamento é consistente nos casos conhecidos. O `limite-01` já tinha passado uma vez antes de falhar, o que mostra que o agente é probabilístico.
+- **O guardrail tem duas camadas, e a avaliação exercita só uma.** O veto em código (`alergenico_detectado`) apareceu apenas no caso `guard-02`. No `guard-01` o modelo recusou sozinho, sem chamar a ferramenta. No `guard-03` o pedido foi corretamente aceito (alergia a camarão, prato de peixe), ou seja, sem falso positivo. O veto em código é garantido pelos testes automáticos (`tests/test_guardrails.py`), não por esta avaliação.
+- **Parte do conjunto foi escrita depois de ver uma falha** (`limite-03` e `limite-04`). Isso foi proposital, para testar se a correção generaliza, mas esses casos não são "cegos".
+- **A latência depende do provedor.** Com o mesmo código, o p50 foi de 5,67 s numa rodada e de 1,4 s em outra. Os números **não incluem tentativas que falharam nem o tempo de espera** entre elas.
+- **O custo é o preço de tabela.** Se a chave estiver no plano gratuito (veja as limitações), nada é cobrado.
 
 ---
 
@@ -190,7 +227,8 @@ Outras formas de usar:
 python -m scripts.chat_cli         # conversa no terminal
 python -m scripts.buscar "algo sem glúten"   # só a busca semântica
 python -m scripts.relatorio_metricas         # custo e latência
-pytest                             # 167 testes, sem chamar a API
+python -m eval.run_eval --repeticoes 3       # avaliação com o Gemini real (centavos)
+pytest                             # 208 testes, sem chamar a API
 ```
 
 **Docker** (não precisa de Python instalado; precisa do `.env` com a chave):
@@ -225,7 +263,8 @@ app/        agent.py (loop), tools.py, guardrails.py, rag.py, llm.py,
 data/       menu.json (15 pratos)
 frontend/   index.html, style.css, app.js
 scripts/    utilitários de linha de comando
-tests/      167 testes
+tests/      208 testes
+eval/       eval_set.json (23 casos), checks.py, run_eval.py, ultimo_resultado.json
 ```
 
 ---
@@ -235,18 +274,23 @@ tests/      167 testes
 Sinceridade sobre o que **não** está resolvido:
 
 - **Sessões em memória:** reiniciar o servidor apaga as conversas, e não funciona com várias instâncias.
-- **Sem autenticação:** se a API for exposta na internet, qualquer pessoa gasta a chave paga. O teto diário limita, não impede.
+- **Sem autenticação:** se a API for exposta na internet, qualquer pessoa gasta a sua chave. O teto diário limita, não impede.
 - **Detector de alergias por palavras-chave:** cobre só 9 alergênicos e pode registrar alergia a mais (erra para o lado seguro). Não substitui confirmação com a cozinha.
 - **Cardápio fictício:** as informações de alergênicos não são de um restaurante real. **Não use este projeto para decisões reais sobre alergia.**
-- **O modelo às vezes recusa por conta própria** pratos com alergênico, antes de o guardrail agir. O caminho de confirmação no código existe e é testado, mas foi pouco exercitado com o modelo real.
+- **O modelo às vezes recusa por conta própria** pratos com alergênico, antes de o guardrail agir. O caminho de confirmação no código existe e é testado, mas foi pouco exercitado com o modelo real (veja 5.3).
+- **O escopo é regra de prompt**, não de código: o agente recusou todos os casos fora do restaurante em 3 rodadas, mas isso não é garantia.
+- **A API não tem retentativa:** se o Gemini der 429 ou 503, o cliente recebe um erro 502. Na avaliação isso aconteceu em 7 de 69 casos.
+- **Plano gratuito:** o erro 429 da avaliação citou `Free Tier` (limite de 15 requisições por minuto), então a chave usada estava num projeto sem faturamento. Nesse plano o conteúdo enviado pode ser usado pelo Google para melhorar seus produtos; use só dados fictícios.
+- **Avaliação pequena:** 23 casos, parte escrita depois de ver uma falha; verificações de texto são grosseiras.
 - **Custo cresce por turno** (histórico reenviado) e o teto diário é aproximado e em UTC.
 - **Falhas não têm custo medido.**
 - **Qualidade e latência do modelo variam** entre execuções.
 
 ## 8. Próximos passos
 
-- Avaliação (Etapa 12).
-- Resumir o histórico antigo para frear o crescimento do custo.
+- Retentativa com espera (backoff) na API para erros 429 e 503, sem estourar o timeout do cliente.
+- Ampliar o conjunto de avaliação (mais perguntas, conversas longas, tentativas de burlar o guardrail) e adicionar um juiz LLM para o que não dá para checar por regra.
+- Resumir o histórico antigo para frear o crescimento do custo (a entrada é cerca de 83% dele).
 - Armazenamento de sessões compartilhado (Redis) e autenticação.
 - Comparar modelos (qualidade × custo × latência) com o mesmo conjunto de avaliação.
 - Streaming da resposta para reduzir a latência percebida.
