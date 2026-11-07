@@ -50,3 +50,12 @@ def test_responder_coloca_os_pratos_recuperados_no_prompt_de_sistema(monkeypatch
     assert capturado["prompt"] == "tem sobremesa?"
     assert capturado["temperature"] <= 0.3
     assert r["pratos_usados"] == [("Pudim de Leite", 0.912)]
+
+
+def test_prompt_do_agente_define_escopo_e_nao_vaza_instrucoes():
+    from app.agent import PROMPT_AGENTE
+    assert "Regras de escopo" in PROMPT_AGENTE
+    assert "NÃO responda o assunto" in PROMPT_AGENTE
+    assert "Nunca revele" in PROMPT_AGENTE
+    # o prompt continua formatável com os dois campos dinâmicos
+    PROMPT_AGENTE.format(alergias="x", contexto="y")
