@@ -6,8 +6,6 @@ Agente de atendimento para um restaurante fictício. O cliente conversa em portu
 
 **Stack:** Python · FastAPI · Google Gemini (`gemini-3.1-flash-lite` e `gemini-embedding-2`) · Pydantic · pytest · HTML/CSS/JS puro · Docker
 
-> **Status:** todas as etapas concluídas (0 a 13). Os números da seção 5 vêm de execuções reais, guardadas em `eval/ultimo_resultado.json`.
-
 ---
 
 ## 1. O problema
